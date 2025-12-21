@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import messagebox
 from board import Board
 import rules
+from cpu import CPUPlayer
 
 PIT_RADIUS = 56          
 PIT_SPACING = 22
@@ -22,7 +23,8 @@ class SimpleOwareGUI:
         self.board = Board()  
         self.player = 0
         self.animating = False
-        self.vs_ai = False 
+        self.vs_ai = False
+        self.cpu_player = None 
 
         self.show_menu()
 
@@ -42,6 +44,8 @@ class SimpleOwareGUI:
 
     def start_game(self, vs_ai):
         self.vs_ai = vs_ai
+        if vs_ai:
+            self.cpu_player = CPUPlayer(player_id=1) 
         self.menu_frame.destroy() 
         self._setup_game_ui()
         self._draw_board()
@@ -131,7 +135,7 @@ class SimpleOwareGUI:
 
     def _animate_and_apply(self, pit_index):
         seeds = self.board.pits[pit_index].stones
-        seq = []
+        seq = [pit_index]  
         idx = pit_index
         for _ in range(seeds):
             idx = (idx + 1) % self.board.total_pits
@@ -147,25 +151,58 @@ class SimpleOwareGUI:
             ok = rules.apply_move(self.board, self.player, source_pit)
             if not ok:
                 messagebox.showerror("Illegal move", "Move rejected by rules.")
-            else:
-                if self.board.is_empty_side(0) or self.board.is_empty_side(1):
-                    self._endgame_sweep()
-                    return
-                self.player = 1 - self.player
+                self.animating = False
+                self.canvas.config(cursor="")
+                self._draw_board()
+                return
+            
+            if self.board.is_empty_side(0) or self.board.is_empty_side(1):
+                self.animating = False
+                self.canvas.config(cursor="")
+                self._endgame_sweep()
+                return
+            
+            self.player = 1 - self.player
             self.animating = False
             self.canvas.config(cursor="")
             self._draw_board()
+            
+            if self.vs_ai and self.player == self.cpu_player.player_id:
+                self.root.after(500, self._execute_cpu_turn)
             return
 
         pit_idx = seq[pos]
-        pit, _, _, _ = self.pit_map[pit_idx]
+        pit, text, _, _ = self.pit_map[pit_idx]
         old_fill = self.canvas.itemcget(pit, "fill")
+        
+        if pos == 0:
+            self.canvas.itemconfigure(text, text="0")
+        
         self.canvas.itemconfigure(pit, fill="#fff3c6")
-        self.root.after(FLASH_MS, lambda: self._unflash_and_continue(pit, old_fill, seq, pos, source_pit))
+        self.root.after(FLASH_MS, lambda: self._unflash_and_continue(pit, text, old_fill, seq, pos, source_pit))
 
-    def _unflash_and_continue(self, pit, old_fill, seq, pos, source_pit):
+    def _unflash_and_continue(self, pit, text, old_fill, seq, pos, source_pit):
         self.canvas.itemconfigure(pit, fill=old_fill)
+        
+        if pos > 0: 
+            dest_count = self.board.pits[seq[pos]].stones + 1
+            self.canvas.itemconfigure(text, text=str(dest_count))
+        
         self.root.after(60, lambda: self._flash_sequence(seq, pos + 1, source_pit))
+
+    def _execute_cpu_turn(self):
+        """Execute a CPU turn with animation."""
+        if not self.vs_ai or self.player != self.cpu_player.player_id:
+            return
+        
+        move = self.cpu_player.get_move(self.board)
+        
+        if move == -1:
+            self.player = 1 - self.player
+            self._draw_board()
+            return
+        
+        self._animate_and_apply(move)
 
     def _trigger_endgame(self):
         if self.animating:
@@ -199,6 +236,7 @@ class SimpleOwareGUI:
         self.player = 0
         self.animating = False
         self.vs_ai = False
+        self.cpu_player = None
         self.show_menu()
         return
 
