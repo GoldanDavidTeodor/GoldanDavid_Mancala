@@ -1,8 +1,11 @@
+import os
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, filedialog
 from board import Board
 import rules
 from cpu import CPUPlayer
+from sessions import SessionManager
+import session_ui
 
 PIT_RADIUS = 56          
 PIT_SPACING = 22
@@ -11,7 +14,8 @@ FLASH_MS = 140
 
 N_PITS = 6 
 WINDOW_WIDTH = (PIT_RADIUS * 2 + PIT_SPACING) * N_PITS + CANVAS_PAD_X * 2
-WINDOW_HEIGHT = 420 
+WINDOW_HEIGHT = 520 
+
 
 class SimpleOwareGUI:
     def __init__(self, root):
@@ -25,6 +29,9 @@ class SimpleOwareGUI:
         self.animating = False
         self.vs_ai = False
         self.cpu_player = None 
+        base = os.path.dirname(__file__)
+        session_file = os.path.join(base, "last_session.json")
+        self.session = SessionManager(autosave_path=session_file)
 
         self.show_menu()
 
@@ -39,6 +46,9 @@ class SimpleOwareGUI:
         
         tk.Button(self.menu_frame, text="1vs1", command=lambda: self.start_game(False), **btn_style).pack(pady=10)
         tk.Button(self.menu_frame, text="vs AI", command=lambda: self.start_game(True), **btn_style).pack(pady=10)
+        tk.Button(self.menu_frame, text="Load Session", command=self._load_session_dialog, **btn_style).pack(pady=6)
+        tk.Button(self.menu_frame, text="Save Session", command=self._save_session_dialog, **btn_style).pack(pady=6)
+        tk.Button(self.menu_frame, text="View Stats", command=self._show_stats, **btn_style).pack(pady=6)
         
         tk.Label(self.menu_frame, text="Select a game mode to begin", bg="#f0f0f0", fg="gray").pack(side="bottom", pady=20)
 
@@ -66,7 +76,12 @@ class SimpleOwareGUI:
         self.endgame_btn = tk.Button(self.root, text="----------", font=("Helvetica", 10),
                          command=self._trigger_endgame)
         self.endgame_btn.pack(pady=(6, 2))
-
+        self.save_match_btn = tk.Button(self.root, text="Save Match (JSON)", font=("Helvetica", 10),
+                        command=self._save_match)
+        self.save_match_btn.pack(pady=(2, 6))
+        self.save_session_btn = tk.Button(self.root, text="Save Session (JSON)", font=("Helvetica", 10),
+                command=self._save_session_dialog)
+        self.save_session_btn.pack(pady=(2, 6))
         self.pit_map = {} 
         self._build_board_graphics()
         self.canvas.tag_bind("pit", "<Button-1>", self._on_pit_click)
@@ -217,20 +232,31 @@ class SimpleOwareGUI:
         for i in range(self.board.total_pits): self.board.pits[i].stones = 0
         self._draw_board()
         
+        try:
+            self.session.record_match([self.board.scores[0], self.board.scores[1]])
+        except Exception:
+            pass
+
         msg = f"Draw: {self.board.scores[0]} - {self.board.scores[1]}"
         if self.board.scores[0] > self.board.scores[1]:
             msg = f"Player 0 wins {self.board.scores[0]} - {self.board.scores[1]}"
         elif self.board.scores[1] > self.board.scores[0]:
             msg = f"Player 1 wins {self.board.scores[1]} - {self.board.scores[0]}"
-        
+
         messagebox.showinfo("Game Over", msg)
-        for name in ("top_score", "canvas", "bottom_score", "status", "endgame_btn"):
+        for name in ("top_score", "canvas", "bottom_score", "status", "endgame_btn", "save_match_btn"):
             w = getattr(self, name, None)
             if w:
                 try:
                     w.destroy()
                 except Exception:
                     pass
+
+        try:
+            if hasattr(self, "save_session_btn") and self.save_session_btn:
+                self.save_session_btn.destroy()
+        except Exception:
+            pass
         self.pit_map = {}
         self.board = Board()
         self.player = 0
@@ -240,7 +266,48 @@ class SimpleOwareGUI:
         self.show_menu()
         return
 
-if __name__ == "__main__":
+    def _save_session_dialog(self):
+        return session_ui.save_session_dialog(self)
+
+    def _load_session_dialog(self):
+        return session_ui.load_session_dialog(self)
+
+    def _save_match(self):
+        path = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("JSON files", "*.json")])
+        if not path:
+            return
+        match = {
+            "timestamp": __import__("datetime").datetime.utcnow().isoformat() + "Z",
+            "scores": [int(self.board.scores[0]), int(self.board.scores[1])],
+            "board_pits": [int(p.stones) for p in self.board.pits],
+            "player": int(self.player),
+            "vs_ai": bool(self.vs_ai),
+        }
+        try:
+            import json
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(match, f, indent=2)
+            try:
+                base = os.path.dirname(__file__)
+                quick = os.path.join(base, "last_match.json")
+                with open(quick, "w", encoding="utf-8") as qf:
+                    json.dump(match, qf, indent=2)
+            except Exception:
+                pass
+            messagebox.showinfo("Saved", f"Match saved to {path}")
+        except Exception as e:
+            messagebox.showerror("Save Error", str(e))
+
+    def _show_stats(self):
+        return session_ui.show_stats(self)
+
+
+def main():
+    import tkinter as tk
     root = tk.Tk()
     app = SimpleOwareGUI(root)
     root.mainloop()
+
+
+if __name__ == "__main__":
+    main()
