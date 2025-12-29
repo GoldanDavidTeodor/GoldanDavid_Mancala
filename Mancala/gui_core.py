@@ -14,8 +14,7 @@ FLASH_MS = 140
 
 N_PITS = 6 
 WINDOW_WIDTH = (PIT_RADIUS * 2 + PIT_SPACING) * N_PITS + CANVAS_PAD_X * 2
-WINDOW_HEIGHT = 520 
-
+WINDOW_HEIGHT = 580 
 
 class SimpleOwareGUI:
     def __init__(self, root):
@@ -28,7 +27,12 @@ class SimpleOwareGUI:
         self.player = 0
         self.animating = False
         self.vs_ai = False
+        self.ai_difficulty = "Medium" 
         self.cpu_player = None 
+        
+        self.history_stack = []
+        self.redo_stack = []
+        
         base = os.path.dirname(__file__)
         session_file = os.path.join(base, "last_session.json")
         self.session = SessionManager(autosave_path=session_file)
@@ -44,8 +48,18 @@ class SimpleOwareGUI:
         
         btn_style = {"font": ("Helvetica", 12), "width": 20, "pady": 10}
         
-        tk.Button(self.menu_frame, text="1vs1", command=lambda: self.start_game(False), **btn_style).pack(pady=10)
-        tk.Button(self.menu_frame, text="vs AI", command=lambda: self.start_game(True), **btn_style).pack(pady=10)
+        tk.Button(self.menu_frame, text="1vs1", command=lambda: self.start_game(False), **btn_style).pack(pady=5)
+        
+        ai_frame = tk.Frame(self.menu_frame, bg="#f0f0f0")
+        ai_frame.pack(pady=5)
+        
+        tk.Button(ai_frame, text="vs AI", command=lambda: self.start_game(True), **btn_style).pack(side="top")
+        
+        self.diff_var = tk.StringVar(value="Medium")
+        diff_menu = tk.OptionMenu(ai_frame, self.diff_var, "Easy", "Medium", "Hard")
+        diff_menu.config(width=21, font=("Helvetica", 10))
+        diff_menu.pack(side="bottom", pady=2)
+
         tk.Button(self.menu_frame, text="Load Session", command=self._load_session_dialog, **btn_style).pack(pady=6)
         tk.Button(self.menu_frame, text="Save Session", command=self._save_session_dialog, **btn_style).pack(pady=6)
         tk.Button(self.menu_frame, text="View Stats", command=self._show_stats, **btn_style).pack(pady=6)
@@ -54,8 +68,14 @@ class SimpleOwareGUI:
 
     def start_game(self, vs_ai):
         self.vs_ai = vs_ai
+        self.ai_difficulty = self.diff_var.get()
+
         if vs_ai:
-            self.cpu_player = CPUPlayer(player_id=1) 
+            self.cpu_player = CPUPlayer(player_id=1, difficulty=self.ai_difficulty) 
+        
+        self.history_stack = []
+        self.redo_stack = []
+
         self.menu_frame.destroy() 
         self._setup_game_ui()
         self._draw_board()
@@ -73,7 +93,16 @@ class SimpleOwareGUI:
         self.status = tk.Label(self.root, text="Player 0's turn", font=("Helvetica", 10))
         self.status.pack()
 
-        self.endgame_btn = tk.Button(self.root, text="----------", font=("Helvetica", 10),
+        self.undo_frame = tk.Frame(self.root)
+        self.undo_frame.pack(pady=(5, 5))
+        
+        self.btn_undo = tk.Button(self.undo_frame, text="Undo", command=self.perform_undo, state="disabled", width=8)
+        self.btn_undo.pack(side="left", padx=5)
+        
+        self.btn_redo = tk.Button(self.undo_frame, text="Redo", command=self.perform_redo, state="disabled", width=8)
+        self.btn_redo.pack(side="left", padx=5)
+
+        self.endgame_btn = tk.Button(self.root, text="Trigger Endgame", font=("Helvetica", 10),
                          command=self._trigger_endgame)
         self.endgame_btn.pack(pady=(6, 2))
         self.save_match_btn = tk.Button(self.root, text="Save Match (JSON)", font=("Helvetica", 10),
@@ -82,10 +111,67 @@ class SimpleOwareGUI:
         self.save_session_btn = tk.Button(self.root, text="Save Session (JSON)", font=("Helvetica", 10),
                 command=self._save_session_dialog)
         self.save_session_btn.pack(pady=(2, 6))
+
         self.pit_map = {} 
         self._build_board_graphics()
         self.canvas.tag_bind("pit", "<Button-1>", self._on_pit_click)
         self._draw_board()
+
+    def save_state(self):
+        state = {
+            'board': self.board.clone(),
+            'player': self.player,
+            'scores': list(self.board.scores)
+        }
+        self.history_stack.append(state)
+        self.redo_stack.clear()
+        self._update_undo_buttons()
+
+    def perform_undo(self):
+        if not self.history_stack or self.animating: return
+        
+        steps = 2 if (self.vs_ai and self.player == 0 and len(self.history_stack) >= 2) else 1
+        if self.vs_ai and self.player == 1: steps = 1
+
+        for _ in range(steps):
+            if not self.history_stack: break
+            
+            current = {
+                'board': self.board.clone(),
+                'player': self.player,
+                'scores': list(self.board.scores)
+            }
+            self.redo_stack.append(current)
+
+            prev = self.history_stack.pop()
+            self.board = prev['board']
+            self.player = prev['player']
+            self.board.scores = prev['scores']
+
+        self._draw_board()
+        self._update_undo_buttons()
+
+    def perform_redo(self):
+        if not self.redo_stack or self.animating: return
+
+        current = {
+            'board': self.board.clone(),
+            'player': self.player,
+            'scores': list(self.board.scores)
+        }
+        self.history_stack.append(current)
+
+        next_state = self.redo_stack.pop()
+        self.board = next_state['board']
+        self.player = next_state['player']
+        self.board.scores = next_state['scores']
+
+        self._draw_board()
+        self._update_undo_buttons()
+
+    def _update_undo_buttons(self):
+        self.btn_undo.config(state="normal" if self.history_stack else "disabled")
+        self.btn_redo.config(state="normal" if self.redo_stack else "disabled")
 
     def _build_board_graphics(self):
         n = self.board.pits_per_side
@@ -119,7 +205,7 @@ class SimpleOwareGUI:
         self.top_score.config(text=f"P1: {self.board.scores[1]}")
         self.bottom_score.config(text=f"P0: {self.board.scores[0]}")
         
-        mode_text = " (vs AI)" if self.vs_ai else ""
+        mode_text = f" (vs AI - {self.ai_difficulty})" if self.vs_ai else ""
         self.status.config(text=f"Player {self.player}'s turn{mode_text}")
 
         legal = rules.legal_moves(self.board, self.player)
@@ -130,9 +216,15 @@ class SimpleOwareGUI:
                 owner = self.board.pit_owner(idx)
                 outline = "#653" if owner == 0 else "#345"
                 self.canvas.itemconfigure(pit, width=3, outline=outline)
+        
+        if hasattr(self, 'btn_undo'):
+            self._update_undo_buttons()
 
     def _on_pit_click(self, event):
         if self.animating: return
+        
+        if self.vs_ai and self.player == 1: return
+
         item = self.canvas.find_withtag("current")
         if not item: return
         tags = self.canvas.gettags(item)
@@ -146,6 +238,8 @@ class SimpleOwareGUI:
             self.canvas.itemconfigure(pit, outline="#ff0000", width=4)
             self.root.after(220, lambda: self.canvas.itemconfigure(pit, outline=old, width=3))
             return
+        
+        self.save_state()
         self._animate_and_apply(pit_idx)
 
     def _animate_and_apply(self, pit_index):
@@ -158,6 +252,10 @@ class SimpleOwareGUI:
 
         self.animating = True
         self.canvas.config(cursor="watch")
+        
+        if hasattr(self, 'btn_undo'):
+            self.btn_undo.config(state="disabled")
+            self.btn_redo.config(state="disabled")
 
         self._flash_sequence(seq, 0, pit_index)
 
@@ -210,6 +308,8 @@ class SimpleOwareGUI:
         if not self.vs_ai or self.player != self.cpu_player.player_id:
             return
         
+        self.save_state()
+
         move = self.cpu_player.get_move(self.board)
         
         if move == -1:
@@ -244,7 +344,7 @@ class SimpleOwareGUI:
             msg = f"Player 1 wins {self.board.scores[1]} - {self.board.scores[0]}"
 
         messagebox.showinfo("Game Over", msg)
-        for name in ("top_score", "canvas", "bottom_score", "status", "endgame_btn", "save_match_btn"):
+        for name in ("top_score", "canvas", "bottom_score", "status", "endgame_btn", "save_match_btn", "undo_frame"):
             w = getattr(self, name, None)
             if w:
                 try:
