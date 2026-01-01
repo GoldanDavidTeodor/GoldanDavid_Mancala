@@ -1,3 +1,10 @@
+"""
+gui_core.py
+
+This is the entry point for the GUI application.
+It integrates the Board, Rules, CPU, and SessionManager into a Tkinter interface.
+"""
+
 import os
 import tkinter as tk
 from tkinter import messagebox, filedialog
@@ -12,12 +19,26 @@ PIT_SPACING = 22
 CANVAS_PAD_X = 28
 FLASH_MS = 140  
 
-N_PITS = 6 
+N_PITS = 6
 WINDOW_WIDTH = (PIT_RADIUS * 2 + PIT_SPACING) * N_PITS + CANVAS_PAD_X * 2
 WINDOW_HEIGHT = 580 
 
+
 class SimpleOwareGUI:
-    def __init__(self, root):
+    """
+    The main GUI controller class for the Oware game.
+    
+    Handles window management, event loops, rendering, animation, 
+    and user input.
+    """
+
+    def __init__(self, root: tk.Tk):
+        """
+        Initialize the GUI application.
+
+        Args:
+            root (tk.Tk): The root Tkinter window.
+        """
         self.root = root
         self.root.title("Oware")
         self.root.geometry(f"{WINDOW_WIDTH}x{WINDOW_HEIGHT}")
@@ -39,7 +60,8 @@ class SimpleOwareGUI:
 
         self.show_menu()
 
-    def show_menu(self):
+    def show_menu(self) -> None:
+        """Create, display the main menu and its buttons."""
         self.menu_frame = tk.Frame(self.root, width=WINDOW_WIDTH, height=WINDOW_HEIGHT, bg="#f0f0f0")
         self.menu_frame.pack_propagate(False) 
         self.menu_frame.pack()
@@ -64,9 +86,15 @@ class SimpleOwareGUI:
         tk.Button(self.menu_frame, text="Save Session", command=self._save_session_dialog, **btn_style).pack(pady=6)
         tk.Button(self.menu_frame, text="View Stats", command=self._show_stats, **btn_style).pack(pady=6)
         
-        tk.Label(self.menu_frame, text="Select a game mode to begin", bg="#f0f0f0", fg="gray").pack(side="bottom", pady=20)
+        tk.Label(self.menu_frame, text="Select a game mode", bg="#f0f0f0", fg="gray").pack(side="bottom", pady=20)
 
-    def start_game(self, vs_ai):
+    def start_game(self, vs_ai: bool) -> None:
+        """
+        Initialize the game board and go from menu to game.
+
+        Args:
+            vs_ai (bool): True only if playing against AI.
+        """
         self.vs_ai = vs_ai
         self.ai_difficulty = self.diff_var.get()
 
@@ -80,7 +108,8 @@ class SimpleOwareGUI:
         self._setup_game_ui()
         self._draw_board()
 
-    def _setup_game_ui(self):
+    def _setup_game_ui(self) -> None:
+        """Construct the game interface."""
         self.top_score = tk.Label(self.root, text="P1: 0", font=("Helvetica", 14, "bold"))
         self.top_score.pack(pady=(6, 0))
 
@@ -117,7 +146,8 @@ class SimpleOwareGUI:
         self.canvas.tag_bind("pit", "<Button-1>", self._on_pit_click)
         self._draw_board()
 
-    def save_state(self):
+    def save_state(self) -> None:
+        """Push current state to history stack for undo tom work."""
         state = {
             'board': self.board.clone(),
             'player': self.player,
@@ -127,9 +157,11 @@ class SimpleOwareGUI:
         self.redo_stack.clear()
         self._update_undo_buttons()
 
-    def perform_undo(self):
+    def perform_undo(self) -> None:
+        """Revert game state to the previous move."""
         if not self.history_stack or self.animating: return
         
+        # if vs AI we undo 2 steps
         steps = 2 if (self.vs_ai and self.player == 0 and len(self.history_stack) >= 2) else 1
         if self.vs_ai and self.player == 1: steps = 1
 
@@ -151,7 +183,8 @@ class SimpleOwareGUI:
         self._draw_board()
         self._update_undo_buttons()
 
-    def perform_redo(self):
+    def perform_redo(self) -> None:
+        """Reapply a previously undone move."""
         if not self.redo_stack or self.animating: return
 
         current = {
@@ -169,11 +202,13 @@ class SimpleOwareGUI:
         self._draw_board()
         self._update_undo_buttons()
 
-    def _update_undo_buttons(self):
+    def _update_undo_buttons(self) -> None:
+        """Enable or disable Undo/Redo buttons based on stack availability."""
         self.btn_undo.config(state="normal" if self.history_stack else "disabled")
         self.btn_redo.config(state="normal" if self.redo_stack else "disabled")
 
-    def _build_board_graphics(self):
+    def _build_board_graphics(self) -> None:
+        """Initial creation of Canvas objects (text, pits)."""
         n = self.board.pits_per_side
         pit_d = PIT_RADIUS * 2
         total_width = n * pit_d + (n - 1) * PIT_SPACING
@@ -193,7 +228,8 @@ class SimpleOwareGUI:
                                                tags=("pit", f"pit{pit_idx}"))
                 self.pit_map[pit_idx] = (pit, text, x, y)
 
-    def _draw_board(self):
+    def _draw_board(self) -> None:
+        """Update the visual state of the board (seed counts, scores)."""
         for idx, (pit, text, cx, cy) in self.pit_map.items():
             count = self.board.pits[idx].stones
             self.canvas.itemconfigure(text, text=str(count))
@@ -220,7 +256,8 @@ class SimpleOwareGUI:
         if hasattr(self, 'btn_undo'):
             self._update_undo_buttons()
 
-    def _on_pit_click(self, event):
+    def _on_pit_click(self, event) -> None:
+        """Handle mouse clicks on pits."""
         if self.animating: return
         
         if self.vs_ai and self.player == 1: return
@@ -232,6 +269,8 @@ class SimpleOwareGUI:
         if not pit_tag: return
         pit_idx = int(pit_tag[3:])
         legal = rules.legal_moves(self.board, self.player)
+        
+        # Illegal move feedback
         if pit_idx not in legal:
             pit, _, _, _ = self.pit_map[pit_idx]
             old = self.canvas.itemcget(pit, "outline")
@@ -242,7 +281,13 @@ class SimpleOwareGUI:
         self.save_state()
         self._animate_and_apply(pit_idx)
 
-    def _animate_and_apply(self, pit_index):
+    def _animate_and_apply(self, pit_index: int) -> None:
+        """
+        Start the sowing animation sequence.
+
+        Args:
+            pit_index (int): The starting pit index.
+        """
         seeds = self.board.pits[pit_index].stones
         seq = [pit_index]  
         idx = pit_index
@@ -259,7 +304,8 @@ class SimpleOwareGUI:
 
         self._flash_sequence(seq, 0, pit_index)
 
-    def _flash_sequence(self, seq, pos, source_pit):
+    def _flash_sequence(self, seq, pos, source_pit) -> None:
+        """Recursive function to handle the frame-by-frame animation."""
         if pos >= len(seq):
             ok = rules.apply_move(self.board, self.player, source_pit)
             if not ok:
@@ -294,7 +340,8 @@ class SimpleOwareGUI:
         self.canvas.itemconfigure(pit, fill="#fff3c6")
         self.root.after(FLASH_MS, lambda: self._unflash_and_continue(pit, text, old_fill, seq, pos, source_pit))
 
-    def _unflash_and_continue(self, pit, text, old_fill, seq, pos, source_pit):
+    def _unflash_and_continue(self, pit, text, old_fill, seq, pos, source_pit) -> None:
+        """Helper to reset pit color and trigger next step in animation."""
         self.canvas.itemconfigure(pit, fill=old_fill)
         
         if pos > 0: 
@@ -303,8 +350,8 @@ class SimpleOwareGUI:
         
         self.root.after(60, lambda: self._flash_sequence(seq, pos + 1, source_pit))
 
-    def _execute_cpu_turn(self):
-        """Execute a CPU turn with animation."""
+    def _execute_cpu_turn(self) -> None:
+        """Calculate and animate the AI move."""
         if not self.vs_ai or self.player != self.cpu_player.player_id:
             return
         
@@ -319,12 +366,14 @@ class SimpleOwareGUI:
         
         self._animate_and_apply(move)
 
-    def _trigger_endgame(self):
+    def _trigger_endgame(self) -> None:
+        """Manually trigger the endgame sequence via button."""
         if self.animating:
             return
         self._endgame_sweep()
 
-    def _endgame_sweep(self):
+    def _endgame_sweep(self) -> None:
+        """Collect remaining stones, update scores, and show game over dialog."""
         p0 = sum(self.board.pits[i].stones for i in self.board.player_pit_indices(0))
         p1 = sum(self.board.pits[i].stones for i in self.board.player_pit_indices(1))
         self.board.scores[0] += p0
@@ -344,19 +393,8 @@ class SimpleOwareGUI:
             msg = f"Player 1 wins {self.board.scores[1]} - {self.board.scores[0]}"
 
         messagebox.showinfo("Game Over", msg)
-        for name in ("top_score", "canvas", "bottom_score", "status", "endgame_btn", "save_match_btn", "undo_frame"):
-            w = getattr(self, name, None)
-            if w:
-                try:
-                    w.destroy()
-                except Exception:
-                    pass
-
-        try:
-            if hasattr(self, "save_session_btn") and self.save_session_btn:
-                self.save_session_btn.destroy()
-        except Exception:
-            pass
+        self._cleanup_game_widgets()
+        
         self.pit_map = {}
         self.board = Board()
         self.player = 0
@@ -366,13 +404,28 @@ class SimpleOwareGUI:
         self.show_menu()
         return
 
-    def _save_session_dialog(self):
+    def _cleanup_game_widgets(self) -> None:
+        """Destroy game widgets to clear the screen."""
+        widgets = [
+            "top_score", "canvas", "bottom_score", "status", 
+            "endgame_btn", "save_match_btn", "save_session_btn", "undo_frame"
+        ]
+        for name in widgets:
+            w = getattr(self, name, None)
+            if w:
+                try: w.destroy()
+                except Exception: pass
+
+    # --- Delegated Methods ---
+
+    def _save_session_dialog(self) -> None:
         return session_ui.save_session_dialog(self)
 
-    def _load_session_dialog(self):
+    def _load_session_dialog(self) -> None:
         return session_ui.load_session_dialog(self)
 
-    def _save_match(self):
+    def _save_match(self) -> None:
+        """Save the current single match state to a JSON file."""
         path = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("JSON files", "*.json")])
         if not path:
             return
@@ -398,11 +451,12 @@ class SimpleOwareGUI:
         except Exception as e:
             messagebox.showerror("Save Error", str(e))
 
-    def _show_stats(self):
+    def _show_stats(self) -> None:
         return session_ui.show_stats(self)
 
 
 def main():
+    """Application entry point."""
     import tkinter as tk
     root = tk.Tk()
     app = SimpleOwareGUI(root)
