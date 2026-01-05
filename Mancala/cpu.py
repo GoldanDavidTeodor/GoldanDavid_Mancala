@@ -127,7 +127,7 @@ class CPUPlayer:
             maximizing (bool): True if it's the AI's turn (maximize).
 
         Returns:
-            Tuple[float, Optional[int]]: (Best Score, Best Move Index).
+            Tuple[float,Optional[int]]: (Best Score, Best Move Index).
         """
         current_player = self.player_id if maximizing else (1 - self.player_id)
         legal = legal_moves(board, current_player)

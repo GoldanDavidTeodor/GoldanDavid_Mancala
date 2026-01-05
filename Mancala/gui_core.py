@@ -147,7 +147,7 @@ class SimpleOwareGUI:
         self._draw_board()
 
     def save_state(self) -> None:
-        """Push current state to history stack for undo tom work."""
+        """Push current state to history stack for undo to work."""
         state = {
             'board': self.board.clone(),
             'player': self.player,
@@ -203,7 +203,7 @@ class SimpleOwareGUI:
         self._update_undo_buttons()
 
     def _update_undo_buttons(self) -> None:
-        """Enable or disable Undo/Redo buttons based on stack availability."""
+        """Enable or disable Undo/Redo buttons based on stack contents."""
         self.btn_undo.config(state="normal" if self.history_stack else "disabled")
         self.btn_redo.config(state="normal" if self.redo_stack else "disabled")
 
@@ -416,7 +416,6 @@ class SimpleOwareGUI:
                 try: w.destroy()
                 except Exception: pass
 
-    # --- Delegated Methods ---
 
     def _save_session_dialog(self) -> None:
         return session_ui.save_session_dialog(self)
